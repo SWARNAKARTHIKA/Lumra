@@ -3,3 +3,7 @@ uvicorn[standard]
 pydantic
 sqlalchemy
 databases[sqlite]
+passlib[bcrypt]  
+pydantic[email]
+email-validator
+
