@@ -1,16 +1,19 @@
+import enum
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, constr, EmailStr
-from typing import Optional
+from pydantic import BaseModel, constr, EmailStr,Field
+from typing import Optional, List,Annotated
 import sqlalchemy
 from databases import Database
-from fastapi.middleware.cors import CORSMiddleware
 
 DATABASE_URL = "sqlite:///./elderly.db"
 
 metadata = sqlalchemy.MetaData()
 database = Database(DATABASE_URL)
 engine = sqlalchemy.create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
+class RequestStatus(str, enum.Enum):
+    requested = "requested"
+    accepted = "accepted"
+    rejected = "rejected"
 # Elderly table (existing)
 elderly = sqlalchemy.Table(
     "elderly",
@@ -38,19 +41,19 @@ guardian = sqlalchemy.Table(
     sqlalchemy.Column("relation", sqlalchemy.String, nullable=False),
     sqlalchemy.Column("password", sqlalchemy.String, nullable=False),
 )
+guardian_requests = sqlalchemy.Table(
+    "guardian_requests",
+    metadata,
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+    sqlalchemy.Column("guardian_id", sqlalchemy.Integer, sqlalchemy.ForeignKey("guardian.id")),
+    sqlalchemy.Column("elderly_id", sqlalchemy.Integer, sqlalchemy.ForeignKey("elderly.id")),
+    sqlalchemy.Column("status", sqlalchemy.String, default=RequestStatus.requested.value),
+)
 
 metadata.create_all(engine)
 
 app = FastAPI()
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Adjust this to specific origins in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Pydantic model for Elderly signup
 class ElderlySignup(BaseModel):
@@ -78,6 +81,30 @@ class GuardianSignup(BaseModel):
 class LoginRequest(BaseModel):
     username: constr(min_length=1)  # can be phone or email
     password: constr(min_length=1)
+
+class GuardianRequestCreate(BaseModel):
+    elderly_phone: constr(min_length=1)  # input elderly phone
+    guardian_id: int
+
+class ElderlyRequestResponse(BaseModel):
+    request_id: int
+    guardian_id: int
+    guardian_name: str
+    status: RequestStatus
+
+class GuardianResponse(BaseModel):
+    guardian_id: int
+    guardian_name: str
+    relation: str
+
+class ElderlyResponse(BaseModel):
+    elderly_id: int
+    elderly_name: str
+    phone: str
+
+class GuardianRequestUpdate(BaseModel):
+    request_id: int
+    action: Annotated[str, Field(pattern="^(accept|reject)$")]  
 
 @app.on_event("startup")
 async def startup():
@@ -161,4 +188,97 @@ async def login(data: LoginRequest):
 
     # No match or wrong password
     raise HTTPException(status_code=401, detail="Invalid username or password")
+
+@app.post("/guardian/request")
+async def guardian_request(data: GuardianRequestCreate):
+    # Find elderly by phone
+    query_elderly = elderly.select().where(elderly.c.phone == data.elderly_phone)
+    elderly_user = await database.fetch_one(query_elderly)
+    if not elderly_user:
+        raise HTTPException(status_code=404, detail="Elderly user not found")
+
+    # Check if request already exists
+    query_existing = guardian_requests.select().where(
+        (guardian_requests.c.guardian_id == data.guardian_id) &
+        (guardian_requests.c.elderly_id == elderly_user["id"])
+    )
+    existing_request = await database.fetch_one(query_existing)
+    if existing_request:
+        raise HTTPException(status_code=400, detail="Request already exists")
+
+    # Insert new request
+    query_insert = guardian_requests.insert().values(
+        guardian_id=data.guardian_id,
+        elderly_id=elderly_user["id"],
+        status=RequestStatus.requested.value,
+    )
+    request_id = await database.execute(query_insert)
+    return {"message": "Request sent successfully", "request_id": request_id}
+
+# 2. Elderly views incoming requests
+@app.get("/elderly/{elderly_id}/requests", response_model=List[ElderlyRequestResponse])
+async def view_elderly_requests(elderly_id: int):
+    query = sqlalchemy.select(
+        guardian_requests.c.id.label("request_id"),
+        guardian.c.id.label("guardian_id"),
+        guardian.c.name.label("guardian_name"),
+        guardian_requests.c.status,
+    ).select_from(
+        guardian_requests.join(guardian, guardian_requests.c.guardian_id == guardian.c.id)
+    ).where(
+        (guardian_requests.c.elderly_id == elderly_id) & 
+        (guardian_requests.c.status == RequestStatus.requested.value)
+    )
+    rows = await database.fetch_all(query)
+    return [ElderlyRequestResponse(**row) for row in rows]
+
+# 3. Elderly accepts or rejects request
+@app.post("/elderly/request/respond")
+async def respond_to_request(data: GuardianRequestUpdate):
+    # Fetch the request
+    query = guardian_requests.select().where(guardian_requests.c.id == data.request_id)
+    request = await database.fetch_one(query)
+    if not request:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if request["status"] != RequestStatus.requested.value:
+        raise HTTPException(status_code=400, detail="Request already processed")
+
+    new_status = RequestStatus.accepted.value if data.action == "accept" else RequestStatus.rejected.value
+    query_update = guardian_requests.update().where(
+        guardian_requests.c.id == data.request_id
+    ).values(status=new_status)
+    await database.execute(query_update)
+    return {"message": f"Request {data.action}ed successfully"}
+
+# 4. Given guardian id, list accepted elderlies (limit none)
+@app.get("/guardian/{guardian_id}/elderlies", response_model=List[ElderlyResponse])
+async def get_guardian_elderlies(guardian_id: int):
+    query = sqlalchemy.select(
+        elderly.c.id.label("elderly_id"),
+        elderly.c.name.label("elderly_name"),
+        elderly.c.phone
+    ).select_from(
+        guardian_requests.join(elderly, guardian_requests.c.elderly_id == elderly.c.id)
+    ).where(
+        (guardian_requests.c.guardian_id == guardian_id) &
+        (guardian_requests.c.status == RequestStatus.accepted.value)
+    )
+    rows = await database.fetch_all(query)
+    return [ElderlyResponse(**row) for row in rows]
+
+# 5. Given elderly id, show up to 7 accepted guardians
+@app.get("/elderly/{elderly_id}/guardians", response_model=List[GuardianResponse])
+async def get_elderly_guardians(elderly_id: int):
+    query = sqlalchemy.select(
+        guardian.c.id.label("guardian_id"),
+        guardian.c.name.label("guardian_name"),
+        guardian.c.relation,
+    ).select_from(
+        guardian_requests.join(guardian, guardian_requests.c.guardian_id == guardian.c.id)
+    ).where(
+        (guardian_requests.c.elderly_id == elderly_id) &
+        (guardian_requests.c.status == RequestStatus.accepted.value)
+    ).limit(7)
+    rows = await database.fetch_all(query)
+    return [GuardianResponse(**row) for row in rows]    
 
