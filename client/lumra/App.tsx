@@ -7,6 +7,7 @@ import RoleSelectScreen from './screens/RoleSelectScreen';
 import GuardianSignupScreen from './screens/GuardianSignupScreen';
 import ElderlySignupScreen from './screens/ElderlySignupScreen';
 import OTPScreen from './screens/OTPScreen';
+import UserDetailsScreen from './screens/UserDetailsScreen';
 
 export type RootStackParamList = {
   Landing: undefined;
@@ -15,9 +16,11 @@ export type RootStackParamList = {
   GuardianSignup: undefined;
   ElderlySignup: undefined;
   OTP: undefined;
+  UserDetails: { message:string; userId: number; role: string};
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
 
 export default function App() {
   return (
@@ -29,6 +32,8 @@ export default function App() {
         <Stack.Screen name="GuardianSignup" component={GuardianSignupScreen} />
         <Stack.Screen name="ElderlySignup" component={ElderlySignupScreen} />
         <Stack.Screen name="OTP" component={OTPScreen} />
+        <Stack.Screen name="UserDetails" component={UserDetailsScreen} />
+
       </Stack.Navigator>
     </NavigationContainer>
   );

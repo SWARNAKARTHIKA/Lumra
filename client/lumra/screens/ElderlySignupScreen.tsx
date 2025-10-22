@@ -1,9 +1,9 @@
-// ...existing code...
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
+import axios from 'axios';
 
 export default function ElderlySignupScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList, 'ElderlySignup'>>();
@@ -25,7 +25,21 @@ export default function ElderlySignupScreen() {
   const isComplete = fields.every((k) => form[k as keyof typeof form].trim() !== '');
   const passwordsMatch = form.password === form.confirm;
 
-  const handleContinue = () => {
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const response = await axios.get('http://localhost:8000/elderly/data');
+        console.log('Received data:', response.data);
+        // Handle the received data (e.g., populate form fields)
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const handleContinue = async () => {
     if (!isComplete) {
       Alert.alert('Validation', 'Please fill all fields.');
       return;
@@ -34,7 +48,18 @@ export default function ElderlySignupScreen() {
       Alert.alert('Validation', 'Passwords do not match.');
       return;
     }
-    nav.navigate('OTP');
+
+    try {
+      const response = await axios.post('http://localhost:8000/elderly/signup', form);
+      Alert.alert('Success', response.data.message);
+      nav.navigate('OTP');
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        Alert.alert('Error', error.response.data.detail || 'An error occurred.');
+      } else {
+        Alert.alert('Error', 'Unable to connect to the server.');
+      }
+    }
   };
 
   return (
@@ -70,4 +95,3 @@ const s = StyleSheet.create({
   btn: { backgroundColor: '#d5c2ad', paddingVertical: 14, paddingHorizontal: 60, borderRadius: 10, marginTop: 20 },
   btntxt: { color: '#2b2520', fontWeight: '600', fontSize: 16 },
 });
-// ...existing code...

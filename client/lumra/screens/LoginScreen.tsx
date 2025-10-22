@@ -1,4 +1,3 @@
-// ...existing code...
 import React, { useState } from 'react';
 import {
   View,
@@ -13,6 +12,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
+import axios from 'axios';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -22,19 +22,41 @@ const LoginScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const handleLogin = () => {
-    if (!username.trim() || !password) {
-      Alert.alert('Validation', 'Please enter username and password.');
-      return;
+  const handleLogin = async () => {
+  if (!username.trim() || !password) {
+    Alert.alert('Validation', 'Please enter username and password.');
+    return;
+  }
+
+  setSubmitting(true);
+
+  try {
+    const response = await axios.post('http://localhost:8000/login', {
+      username,
+      password,
+    });
+
+    const { message, role, user_id } = response.data;
+
+    Alert.alert('Success', message);
+
+    // Navigate to UserDetails screen with role and user_id
+    navigation.navigate('UserDetails', {
+      message: message,
+      role: role,
+      userId: user_id,
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      Alert.alert('Error', error.response.data.detail || 'Invalid credentials.');
+    } else {
+      Alert.alert('Error', 'Unable to connect to the server.');
     }
-    setSubmitting(true);
-    // simulate login
-    setTimeout(() => {
-      setSubmitting(false);
-      // on success navigate to Landing (or change to desired route)
-      navigation.navigate('Landing');
-    }, 700);
-  };
+  } finally {
+    setSubmitting(false);
+  }
+};
+
 
   return (
     <KeyboardAvoidingView
@@ -137,4 +159,3 @@ const styles = StyleSheet.create({
 });
 
 export default LoginScreen;
-// ...existing code...

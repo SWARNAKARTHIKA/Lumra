@@ -3,6 +3,7 @@ from pydantic import BaseModel, constr, EmailStr
 from typing import Optional
 import sqlalchemy
 from databases import Database
+from fastapi.middleware.cors import CORSMiddleware
 
 DATABASE_URL = "sqlite:///./elderly.db"
 
@@ -41,6 +42,15 @@ guardian = sqlalchemy.Table(
 metadata.create_all(engine)
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Adjust this to specific origins in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Pydantic model for Elderly signup
 class ElderlySignup(BaseModel):
