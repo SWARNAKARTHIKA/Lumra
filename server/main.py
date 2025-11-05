@@ -1,6 +1,7 @@
 import enum
 import math
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, constr, EmailStr, Field
 from typing import Optional, List, Annotated
 import sqlalchemy
@@ -12,15 +13,18 @@ metadata = sqlalchemy.MetaData()
 database = Database(DATABASE_URL)
 engine = sqlalchemy.create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
-
+# ============================
 # ENUM for request status
+# ============================
 class RequestStatus(str, enum.Enum):
     requested = "requested"
     accepted = "accepted"
     rejected = "rejected"
 
+# ============================
+# TABLES
+# ============================
 
-# Elderly table
 elderly = sqlalchemy.Table(
     "elderly",
     metadata,
@@ -35,7 +39,6 @@ elderly = sqlalchemy.Table(
     sqlalchemy.Column("password", sqlalchemy.String, nullable=False),
 )
 
-# Guardian table
 guardian = sqlalchemy.Table(
     "guardian",
     metadata,
@@ -48,7 +51,6 @@ guardian = sqlalchemy.Table(
     sqlalchemy.Column("password", sqlalchemy.String, nullable=False),
 )
 
-# Relationship and request status
 guardian_requests = sqlalchemy.Table(
     "guardian_requests",
     metadata,
@@ -58,7 +60,6 @@ guardian_requests = sqlalchemy.Table(
     sqlalchemy.Column("status", sqlalchemy.String, default=RequestStatus.requested.value),
 )
 
-# Geofence table (one active per elderly)
 geofence = sqlalchemy.Table(
     "geofence",
     metadata,
@@ -69,7 +70,6 @@ geofence = sqlalchemy.Table(
     sqlalchemy.Column("radius", sqlalchemy.Float, nullable=False),
 )
 
-# Elderly live location
 elderly_location = sqlalchemy.Table(
     "elderly_location",
     metadata,
@@ -83,8 +83,24 @@ elderly_location = sqlalchemy.Table(
 
 metadata.create_all(engine)
 
+# ============================
+# APP INIT
+# ============================
 app = FastAPI()
 
+# ============================
+# CORS CONFIGURATION
+# ============================
+origins = ["*"]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ============================
 # Pydantic Models
@@ -101,7 +117,6 @@ class ElderlySignup(BaseModel):
     password: constr(min_length=1)
     confirm: constr(min_length=1)
 
-
 class GuardianSignup(BaseModel):
     name: constr(min_length=1)
     email: EmailStr
@@ -111,16 +126,13 @@ class GuardianSignup(BaseModel):
     password: constr(min_length=1)
     confirm: constr(min_length=1)
 
-
 class LoginRequest(BaseModel):
     username: constr(min_length=1)
     password: constr(min_length=1)
 
-
 class GuardianRequestCreate(BaseModel):
     elderly_phone: constr(min_length=1)
     guardian_id: int
-
 
 class ElderlyRequestResponse(BaseModel):
     request_id: int
@@ -128,23 +140,19 @@ class ElderlyRequestResponse(BaseModel):
     guardian_name: str
     status: RequestStatus
 
-
 class GuardianResponse(BaseModel):
     guardian_id: int
     guardian_name: str
     relation: str
-
 
 class ElderlyResponse(BaseModel):
     elderly_id: int
     elderly_name: str
     phone: str
 
-
 class GuardianRequestUpdate(BaseModel):
     request_id: int
     action: Annotated[str, Field(pattern="^(accept|reject)$")]
-
 
 class SetGeofence(BaseModel):
     elderly_id: int
@@ -152,29 +160,25 @@ class SetGeofence(BaseModel):
     longitude: float
     radius: float
 
-
 class LocationUpdate(BaseModel):
     elderly_id: int
     latitude: float
     longitude: float
 
-
 # ============================
-# DB Events
+# DB CONNECTION EVENTS
 # ============================
 
 @app.on_event("startup")
 async def startup():
     await database.connect()
 
-
 @app.on_event("shutdown")
 async def shutdown():
     await database.disconnect()
 
-
 # ============================
-# Helper Function
+# HELPER FUNCTIONS
 # ============================
 
 def calculate_distance(lat1, lon1, lat2, lon2):
@@ -183,20 +187,17 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     dlambda = math.radians(lon2 - lon1)
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
-
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-
 # ============================
-# AUTH + USER MANAGEMENT
+# AUTH & USER MANAGEMENT
 # ============================
 
 @app.post("/elderly/signup")
 async def elderly_signup(data: ElderlySignup):
     if data.password != data.confirm:
         raise HTTPException(status_code=400, detail="Passwords do not match")
-
     last_record_id = await database.execute(elderly.insert().values(
         name=data.name, age=data.age, gender=data.gender,
         phone=data.phone, address=data.address,
@@ -205,20 +206,16 @@ async def elderly_signup(data: ElderlySignup):
     ))
     return {"message": "Elderly signup success", "id": last_record_id}
 
-
 @app.post("/guardian/signup")
 async def guardian_signup(data: GuardianSignup):
     if data.password != data.confirm:
         raise HTTPException(status_code=400, detail="Passwords do not match")
-
     exists_email = await database.fetch_one(guardian.select().where(guardian.c.email == data.email))
     if exists_email:
         raise HTTPException(status_code=400, detail="Email already registered")
-
     exists_phone = await database.fetch_one(guardian.select().where(guardian.c.phone == data.phone))
     if exists_phone:
         raise HTTPException(status_code=400, detail="Phone already registered")
-
     last_record_id = await database.execute(guardian.insert().values(
         name=data.name, email=data.email, phone=data.phone,
         address=data.address, relation=data.relation,
@@ -226,19 +223,15 @@ async def guardian_signup(data: GuardianSignup):
     ))
     return {"message": "Guardian signup success", "id": last_record_id}
 
-
 @app.post("/login")
 async def login(data: LoginRequest):
     user_elderly = await database.fetch_one(elderly.select().where(elderly.c.phone == data.username))
     if user_elderly and data.password == user_elderly["password"]:
         return {"role": "elderly", "user_id": user_elderly["id"]}
-
     user_guardian = await database.fetch_one(guardian.select().where(guardian.c.phone == data.username))
     if user_guardian and data.password == user_guardian["password"]:
         return {"role": "guardian", "user_id": user_guardian["id"]}
-
     raise HTTPException(status_code=401, detail="Invalid credentials")
-
 
 # ============================
 # REQUEST CONNECT SYSTEM
@@ -249,7 +242,6 @@ async def guardian_request(data: GuardianRequestCreate):
     elderly_user = await database.fetch_one(elderly.select().where(elderly.c.phone == data.elderly_phone))
     if not elderly_user:
         raise HTTPException(status_code=404, detail="Elderly not found")
-
     existing_request = await database.fetch_one(
         guardian_requests.select().where(
             (guardian_requests.c.guardian_id == data.guardian_id)
@@ -258,43 +250,12 @@ async def guardian_request(data: GuardianRequestCreate):
     )
     if existing_request:
         raise HTTPException(status_code=400, detail="Already requested")
-
     request_id = await database.execute(guardian_requests.insert().values(
         guardian_id=data.guardian_id,
         elderly_id=elderly_user["id"],
         status=RequestStatus.requested.value,
     ))
     return {"message": "Request sent", "request_id": request_id}
-
-
-@app.get("/elderly/{elderly_id}/requests", response_model=List[ElderlyRequestResponse])
-async def view_elderly_requests(elderly_id: int):
-    rows = await database.fetch_all(sqlalchemy.select(
-        guardian_requests.c.id.label("request_id"),
-        guardian.c.id.label("guardian_id"),
-        guardian.c.name.label("guardian_name"),
-        guardian_requests.c.status,
-    ).select_from(
-        guardian_requests.join(guardian)
-    ).where(
-        (guardian_requests.c.elderly_id == elderly_id) &
-        (guardian_requests.c.status == RequestStatus.requested.value)
-    ))
-    return [ElderlyRequestResponse(**row) for row in rows]
-
-
-@app.post("/elderly/request/respond")
-async def respond_to_request(data: GuardianRequestUpdate):
-    request = await database.fetch_one(guardian_requests.select().where(guardian_requests.c.id == data.request_id))
-    if not request:
-        raise HTTPException(status_code=404, detail="Request not found")
-
-    new_status = RequestStatus.accepted.value if data.action == "accept" else RequestStatus.rejected.value
-    await database.execute(guardian_requests.update().where(
-        guardian_requests.c.id == data.request_id
-    ).values(status=new_status))
-    return {"message": f"Request {data.action}ed"}
-
 
 @app.get("/guardian/{guardian_id}/elderlies", response_model=List[ElderlyResponse])
 async def get_guardian_elderlies(guardian_id: int):
@@ -310,9 +271,8 @@ async def get_guardian_elderlies(guardian_id: int):
     ))
     return [ElderlyResponse(**row) for row in rows]
 
-
 # ============================
-# ✅ GEOFENCING LOGIC
+# GEOFENCING
 # ============================
 
 @app.post("/geofence/set")
@@ -320,9 +280,7 @@ async def set_geofence(data: SetGeofence):
     existing_elderly = await database.fetch_one(elderly.select().where(elderly.c.id == data.elderly_id))
     if not existing_elderly:
         raise HTTPException(status_code=404, detail="Elderly not found")
-
     fence = await database.fetch_one(geofence.select().where(geofence.c.elderly_id == data.elderly_id))
-
     if fence:
         await database.execute(geofence.update().where(
             geofence.c.elderly_id == data.elderly_id
@@ -341,7 +299,6 @@ async def set_geofence(data: SetGeofence):
         ))
         return {"message": "Geofence set"}
 
-
 @app.post("/location/update")
 async def update_location(data: LocationUpdate):
     await database.execute(elderly_location.insert().values(
@@ -350,41 +307,19 @@ async def update_location(data: LocationUpdate):
         longitude=data.longitude,
         last_updated="NOW"
     ))
-
     fence = await database.fetch_one(geofence.select().where(geofence.c.elderly_id == data.elderly_id))
     if not fence:
         return {"inside": True, "message": "No geofence set"}
-
     distance = calculate_distance(data.latitude, data.longitude, fence["latitude"], fence["longitude"])
     is_inside = distance <= fence["radius"]
-
     await database.execute(elderly_location.update().where(
         elderly_location.c.elderly_id == data.elderly_id
     ).values(is_inside=is_inside))
-
     return {
         "inside": is_inside,
         "distance_meters": round(distance, 2),
-        "message": "Inside safe area" if is_inside else "⚠️ OUTSIDE safe area!"
+        "message": "Inside safe area" if is_inside else "⚠ OUTSIDE safe area!"
     }
-
-
-@app.get("/geofence/{elderly_id}/status")
-async def geofence_status(elderly_id: int):
-    latest = await database.fetch_one(sqlalchemy.select(
-        elderly_location.c.latitude,
-        elderly_location.c.longitude,
-        elderly_location.c.is_inside,
-        elderly_location.c.last_updated
-    ).where(
-        elderly_location.c.elderly_id == elderly_id
-    ).order_by(elderly_location.c.id.desc()).limit(1))
-
-    if not latest:
-        raise HTTPException(status_code=404, detail="No location data")
-
-    return latest
-
 
 @app.get("/geofence/{elderly_id}")
 async def get_geofence(elderly_id: int):

@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import axios from 'axios';
+import { BASE_URL } from '../apiConfig';
 
 export default function GuardianSignupScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -15,7 +16,7 @@ export default function GuardianSignupScreen() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.get('http://localhost:8000/guardian/data');
+  const response = await axios.get(`${BASE_URL}/guardian/data`);
         console.log('Received data:', response.data);
         // Handle the received data (e.g., populate form fields)
       } catch (error) {
@@ -37,7 +38,7 @@ export default function GuardianSignupScreen() {
     }
 
     try {
-      const response = await axios.post('http://localhost:8000/guardian/signup', form);
+  const response = await axios.post(`${BASE_URL}/guardian/signup`, form);
       Alert.alert('Success', response.data.message);
       nav.navigate('OTP');
     } catch (error) {

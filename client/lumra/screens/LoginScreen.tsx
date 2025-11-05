@@ -11,8 +11,8 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../App';
 import axios from 'axios';
+import { RootStackParamList } from '../App';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -23,40 +23,44 @@ const LoginScreen: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async () => {
-  if (!username.trim() || !password) {
-    Alert.alert('Validation', 'Please enter username and password.');
-    return;
-  }
-
-  setSubmitting(true);
-
-  try {
-    const response = await axios.post('http://localhost:8000/login', {
-      username,
-      password,
-    });
-
-    const { message, role, user_id } = response.data;
-
-    Alert.alert('Success', message);
-
-    // Navigate to UserDetails screen with role and user_id
-    navigation.navigate('UserDetails', {
-      message: message,
-      role: role,
-      userId: user_id,
-    });
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response) {
-      Alert.alert('Error', error.response.data.detail || 'Invalid credentials.');
-    } else {
-      Alert.alert('Error', 'Unable to connect to the server.');
+    if (!username.trim() || !password.trim()) {
+      Alert.alert('Validation', 'Please enter username and password.');
+      return;
     }
-  } finally {
-    setSubmitting(false);
-  }
-};
 
+    setSubmitting(true);
+
+    try {
+      const response = await axios.post('http://10.0.2.2:8000/login', {
+        username,
+        password,
+      }); 
+      // Note: On physical device - use your PC IP: http://192.168.x.x:8000/login
+
+      const { role, user_id } = response.data;
+
+      if (role === 'elderly') {
+        navigation.navigate('ElderlyDashboard', {
+          userId: user_id,
+        });
+      } else if (role === 'guardian') {
+        navigation.navigate('GuardianDashboard', {
+          userId: user_id,
+        });
+      } else {
+        Alert.alert('Error', 'Unknown role from server.');
+      }
+
+    } catch (error: any) {
+      if (axios.isAxiosError(error) && error.response) {
+        Alert.alert('Login Failed', error.response.data.detail || 'Invalid credentials');
+      } else {
+        Alert.alert('Error', 'Unable to connect to server');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -64,15 +68,14 @@ const LoginScreen: React.FC = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.card}>
-        <Text style={styles.title}>Welcome back</Text>
+        <Text style={styles.title}>Welcome Back</Text>
 
         <TextInput
           style={styles.input}
-          placeholder="Username or email"
+          placeholder="Phone Number"
           value={username}
           onChangeText={setUsername}
-          autoCapitalize="none"
-          keyboardType="email-address"
+          keyboardType="phone-pad"
           placeholderTextColor="#8b8580"
         />
 
@@ -90,7 +93,9 @@ const LoginScreen: React.FC = () => {
           onPress={handleLogin}
           disabled={submitting}
         >
-          <Text style={styles.buttonText}>{submitting ? 'Signing in...' : 'Login'}</Text>
+          <Text style={styles.buttonText}>
+            {submitting ? 'Signing in...' : 'Login'}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('RoleSelect')}>

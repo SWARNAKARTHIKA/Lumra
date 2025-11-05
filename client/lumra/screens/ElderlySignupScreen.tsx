@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../App';
 import axios from 'axios';
+import { BASE_URL } from '../apiConfig';
 
 export default function ElderlySignupScreen() {
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList, 'ElderlySignup'>>();
@@ -28,7 +29,7 @@ export default function ElderlySignupScreen() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await axios.get('http://localhost:8000/elderly/data');
+        const response = await axios.get(`${BASE_URL}/elderly/data`);
         console.log('Received data:', response.data);
         // Handle the received data (e.g., populate form fields)
       } catch (error) {
@@ -50,7 +51,7 @@ export default function ElderlySignupScreen() {
     }
 
     try {
-      const response = await axios.post('http://localhost:8000/elderly/signup', form);
+  const response = await axios.post(`${BASE_URL}/elderly/signup`, form);
       Alert.alert('Success', response.data.message);
       nav.navigate('OTP');
     } catch (error) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import axios from "axios";
+import { BASE_URL } from '../apiConfig';
 import { RouteProp, useRoute } from "@react-navigation/native";
 import { RootStackParamList } from "../App";
 
@@ -12,8 +13,7 @@ const ElderlyDashboard = () => {
   const [guardian, setGuardian] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Same: 10.0.2.2 to access FastAPI on port 8000
-  const BASE_URL = "http://10.0.2.2:8000";
+  // BASE_URL is imported from apiConfig
 
   useEffect(() => {
     axios
